@@ -1,8 +1,16 @@
+import { type ScopedThreadRef } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { type DraftId } from "./composerDraftStore";
+
 export const PROMPT_HISTORY_STORAGE_KEY = "t3code:prompt-history:v1";
 export const PROMPT_HISTORY_LIMIT = 100;
+
+export function getPromptHistoryKey(target: ScopedThreadRef | DraftId): string {
+  return typeof target === "string" ? `draft:${target}` : `server:${scopedThreadKey(target)}`;
+}
 
 export interface PromptHistoryNavigationState {
   readonly draft: string;
@@ -10,8 +18,8 @@ export interface PromptHistoryNavigationState {
 }
 
 interface PromptHistoryStoreState {
-  prompts: string[];
-  addPrompt: (prompt: string) => void;
+  promptsByThreadKey: Record<string, string[]>;
+  addPrompt: (threadKey: string, prompt: string) => void;
   clear: () => void;
 }
 
@@ -87,20 +95,32 @@ export function navigatePromptHistory(input: {
 export const usePromptHistoryStore = create<PromptHistoryStoreState>()(
   persist(
     (set) => ({
-      prompts: [],
-      addPrompt: (prompt) =>
+      promptsByThreadKey: {},
+      addPrompt: (threadKey, prompt) =>
         set((state) => ({
-          prompts: addPromptToHistory(state.prompts, prompt),
+          promptsByThreadKey: {
+            ...state.promptsByThreadKey,
+            [threadKey]: addPromptToHistory(state.promptsByThreadKey[threadKey] ?? [], prompt),
+          },
         })),
-      clear: () => set({ prompts: [] }),
+      clear: () => set({ promptsByThreadKey: {} }),
     }),
     {
       name: PROMPT_HISTORY_STORAGE_KEY,
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() =>
         typeof localStorage === "undefined" ? createFallbackStorage() : localStorage,
       ),
-      partialize: (state) => ({ prompts: state.prompts }),
+      partialize: (state) => ({ promptsByThreadKey: state.promptsByThreadKey }),
+      migrate: (persisted, version) => {
+        if (version < 2) {
+          const old = persisted as { prompts?: string[] } | null;
+          return {
+            promptsByThreadKey: old?.prompts ? { legacy: [...old.prompts] } : {},
+          };
+        }
+        return persisted as { promptsByThreadKey: Record<string, string[]> };
+      },
     },
   ),
 );

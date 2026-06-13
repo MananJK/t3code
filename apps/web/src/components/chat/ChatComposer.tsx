@@ -120,6 +120,7 @@ import {
 } from "../../promptHistoryStore";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
+const EMPTY_PROMPT_HISTORY: readonly string[] = [];
 
 const runtimeModeConfig: Record<
   RuntimeMode,
@@ -420,6 +421,7 @@ export interface ChatComposerHandle {
 
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
+  promptHistoryKey: string;
   environmentId: EnvironmentId;
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
@@ -536,6 +538,7 @@ export interface ChatComposerProps {
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
     composerDraftTarget,
+    promptHistoryKey,
     environmentId,
     routeKind,
     routeThreadRef,
@@ -613,7 +616,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
-  const promptHistory = usePromptHistoryStore((store) => store.prompts);
+  const promptHistory = usePromptHistoryStore(
+    (store) => store.promptsByThreadKey[promptHistoryKey] ?? EMPTY_PROMPT_HISTORY,
+  );
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
@@ -1456,9 +1461,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       terminalContextIds: string[],
     ) => {
       if (activePendingProgress?.activeQuestion && pendingUserInputs.length > 0) {
-        if (!isApplyingPromptHistoryRef.current) {
-          promptHistoryNavigationRef.current = null;
-        }
         setComposerCursor(nextCursor);
         setComposerTrigger(
           cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
@@ -1471,9 +1473,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           cursorAdjacentToMention,
         );
         return;
-      }
-      if (!isApplyingPromptHistoryRef.current) {
-        promptHistoryNavigationRef.current = null;
       }
       promptRef.current = nextPrompt;
       setPrompt(nextPrompt);

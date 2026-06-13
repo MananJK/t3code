@@ -82,7 +82,7 @@ import {
   buildPlanImplementationPrompt,
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
-import { usePromptHistoryStore } from "../promptHistoryStore";
+import { getPromptHistoryKey, usePromptHistoryStore } from "../promptHistoryStore";
 import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
@@ -828,6 +828,10 @@ export default function ChatView(props: ChatViewProps) {
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
+  const promptHistoryKey = useMemo(
+    () => getPromptHistoryKey(composerDraftTarget),
+    [composerDraftTarget],
+  );
   const serverThread = useStore(
     useMemo(
       () => createThreadSelectorByRef(routeKind === "server" ? routeThreadRef : null),
@@ -3137,7 +3141,7 @@ export default function ChatView(props: ChatViewProps) {
         ...(bootstrap ? { bootstrap } : {}),
         createdAt: messageCreatedAt,
       });
-      addPromptToHistory(promptForSend);
+      addPromptToHistory(promptHistoryKey, promptForSend);
       turnStartSucceeded = true;
     })().catch(async (err: unknown) => {
       if (
@@ -3909,6 +3913,7 @@ export default function ChatView(props: ChatViewProps) {
                 <ChatComposer
                   composerRef={composerRef}
                   composerDraftTarget={composerDraftTarget}
+                  promptHistoryKey={promptHistoryKey}
                   environmentId={environmentId}
                   routeKind={routeKind}
                   routeThreadRef={routeThreadRef}
