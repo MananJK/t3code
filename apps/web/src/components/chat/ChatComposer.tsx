@@ -1787,10 +1787,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return true;
       }
     }
-    if (key === "ArrowUp") {
+    if (key === "ArrowUp" && composerCursor === 0) {
       return navigateComposerPromptHistory("older");
     }
-    if (key === "ArrowDown") {
+    if (key === "ArrowDown" && composerCursor === 0) {
       return navigateComposerPromptHistory("newer");
     }
     if (key === "Enter" && !event.shiftKey) {
