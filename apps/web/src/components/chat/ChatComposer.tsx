@@ -125,6 +125,13 @@ import { formatProviderSkillDisplayName } from "../../providerSkillPresentation"
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
+import {
+  navigatePromptHistory,
+  type PromptHistoryNavigationState,
+  usePromptHistoryStore,
+} from "../../promptHistoryStore";
+
+const EMPTY_PROMPT_HISTORY: readonly string[] = [];
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 
@@ -430,6 +437,7 @@ export interface ChatComposerHandle {
 
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
+  promptHistoryKey: string;
   environmentId: EnvironmentId;
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
@@ -543,6 +551,7 @@ export interface ChatComposerProps {
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
     composerDraftTarget,
+    promptHistoryKey,
     environmentId,
     routeKind,
     routeThreadRef,
@@ -622,6 +631,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
+  const promptHistory = usePromptHistoryStore(
+    (store) => store.promptsByThreadKey[promptHistoryKey] ?? EMPTY_PROMPT_HISTORY,
+  );
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
@@ -899,6 +911,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandReleaseFrameRef = useRef<number | null>(null);
   const mobileComposerExpandInFlightRef = useRef(false);
   const dragDepthRef = useRef(0);
+  const promptHistoryNavigationRef = useRef<PromptHistoryNavigationState | null>(null);
+  const isApplyingPromptHistoryRef = useRef(false);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1150,6 +1164,57 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [composerDraftTarget, setComposerDraftPrompt],
   );
 
+  const replacePromptFromHistory = useCallback(
+    (nextPrompt: string) => {
+      isApplyingPromptHistoryRef.current = true;
+      promptRef.current = nextPrompt;
+      setPrompt(nextPrompt);
+      const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
+      setComposerCursor(nextCursor);
+      setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
+      setComposerHighlightedItemId(null);
+      window.requestAnimationFrame(() => {
+        composerEditorRef.current?.focusAt(nextCursor);
+        isApplyingPromptHistoryRef.current = false;
+      });
+    },
+    [promptRef, setPrompt],
+  );
+
+  const navigateComposerPromptHistory = useCallback(
+    (direction: "newer" | "older"): boolean => {
+      if (activePendingProgress !== null || pendingUserInputs.length > 0) {
+        return false;
+      }
+      if (composerImagesRef.current.length > 0 || composerTerminalContextsRef.current.length > 0) {
+        return false;
+      }
+
+      const next = navigatePromptHistory({
+        direction,
+        prompts: promptHistory,
+        currentPrompt: promptRef.current,
+        state: promptHistoryNavigationRef.current,
+      });
+      if (!next) {
+        return false;
+      }
+
+      promptHistoryNavigationRef.current = next.nextState;
+      replacePromptFromHistory(next.nextPrompt);
+      return true;
+    },
+    [
+      activePendingProgress,
+      composerImagesRef,
+      composerTerminalContextsRef,
+      pendingUserInputs.length,
+      promptHistory,
+      promptRef,
+      replacePromptFromHistory,
+    ],
+  );
+
   const addComposerImage = useCallback(
     (image: ComposerImageAttachment) => {
       addComposerDraftImage(composerDraftTarget, image);
@@ -1295,6 +1360,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setComposerHighlightedItemId(null);
     setComposerCursor(collapseExpandedComposerCursor(promptRef.current, promptRef.current.length));
     setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
+    promptHistoryNavigationRef.current = null;
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
   }, [draftId, activeThreadId, promptRef]);
@@ -1749,6 +1815,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onSelectComposerItem(selectedItem);
         return true;
       }
+    }
+    if (key === "ArrowUp" && composerCursor === 0) {
+      return navigateComposerPromptHistory("older");
+    }
+    if (key === "ArrowDown" && composerCursor === 0) {
+      return navigateComposerPromptHistory("newer");
     }
     if (key === "Enter" && !event.shiftKey) {
       submitComposer();

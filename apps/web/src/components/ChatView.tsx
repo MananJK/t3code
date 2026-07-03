@@ -99,6 +99,7 @@ import {
   buildPlanImplementationPrompt,
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
+import { getPromptHistoryKey, usePromptHistoryStore } from "../promptHistoryStore";
 import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
@@ -1035,6 +1036,10 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
+  const promptHistoryKey = useMemo(
+    () => getPromptHistoryKey(composerDraftTarget),
+    [composerDraftTarget],
+  );
   const serverThread = useThread(routeKind === "server" ? routeThreadRef : null);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
   const activeThreadLastVisitedAt = useUiStateStore((store) =>
@@ -1059,6 +1064,7 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
+  const addPromptToHistory = usePromptHistoryStore((store) => store.addPrompt);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const setComposerDraftTerminalContexts = useComposerDraftStore(
     (store) => store.setTerminalContexts,
@@ -4181,6 +4187,7 @@ function ChatViewContent(props: ChatViewProps) {
           createdAt: messageCreatedAt,
         },
       });
+      addPromptToHistory(promptHistoryKey, promptForSend);
       if (startResult._tag === "Failure") {
         failure = startResult;
       } else {
@@ -5144,6 +5151,7 @@ function ChatViewContent(props: ChatViewProps) {
                     <ChatComposer
                       composerRef={composerRef}
                       composerDraftTarget={composerDraftTarget}
+                      promptHistoryKey={promptHistoryKey}
                       environmentId={environmentId}
                       routeKind={routeKind}
                       routeThreadRef={routeThreadRef}
