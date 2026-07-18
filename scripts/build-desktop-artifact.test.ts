@@ -202,7 +202,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("installs optional native dependencies for the target desktop architecture", () => {
-    assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod"]);
+    assert.deepStrictEqual(STAGE_INSTALL_ARGS, [
+      "install",
+      "--prod",
+      "--",
+      "--fetch-timeout",
+      "180000",
+    ]);
     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
       supportedArchitectures: {
         os: ["darwin"],
@@ -489,6 +495,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(win.icon, "icon.ico");
       assert.equal(win.signAndEditExecutable, true);
       assert.notProperty(win, "azureSignOptions");
+
+      const nsis = config.nsis as Record<string, unknown>;
+      assert.ok(nsis);
+      assert.equal(nsis.oneClick, false);
+      assert.equal(nsis.perMachine, false);
+      assert.equal(nsis.guid, "com.t3tools.t3code");
+      assert.equal(nsis.warningsAsErrors, false);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
