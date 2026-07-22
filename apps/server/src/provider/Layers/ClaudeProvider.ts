@@ -2,7 +2,6 @@ import {
   type ClaudeSettings,
   type ModelCapabilities,
   type ModelSelection,
-  ProviderDriverKind,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
@@ -22,8 +21,10 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
   query as claudeQuery,
+  type Options as ClaudeQueryOptions,
   type SlashCommand as ClaudeSlashCommand,
   type SDKUserMessage,
+  type SettingSource,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import {
@@ -44,7 +45,6 @@ const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabili
   optionDescriptors: [],
 });
 
-const PROVIDER = ProviderDriverKind.make("claudeAgent");
 const CLAUDE_PRESENTATION = {
   displayName: "Claude",
   showInteractionModeToggle: true,
@@ -78,8 +78,8 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
           id: "contextWindow",
           label: "Context Window",
           options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
+            { value: "200k", label: "200k" },
+            { value: "1m", label: "1M", isDefault: true },
           ],
         }),
       ],
@@ -164,8 +164,8 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
           id: "contextWindow",
           label: "Context Window",
           options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
+            { value: "200k", label: "200k" },
+            { value: "1m", label: "1M", isDefault: true },
           ],
         }),
       ],
@@ -216,6 +216,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
+          // Sonnet is 200k-default in Claude Code (1M is opt-in there too).
           options: [
             { value: "200k", label: "200k", isDefault: true },
             { value: "1m", label: "1M" },
@@ -245,6 +246,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
+          // Sonnet is 200k-default in Claude Code (1M is opt-in there too).
           options: [
             { value: "200k", label: "200k", isDefault: true },
             { value: "1m", label: "1M" },
@@ -371,8 +373,22 @@ export function isClaudeUltracodeEffort(effort: string | null | undefined): bool
   return effort === "ultracode";
 }
 
+export function resolveClaudeContextWindow(
+  modelSelection: ModelSelection | undefined,
+): string | undefined {
+  const caps = getClaudeModelCapabilities(modelSelection?.model);
+  const raw = getModelSelectionStringOptionValue(modelSelection, "contextWindow");
+  const descriptors = getProviderOptionDescriptors({
+    caps,
+    ...(raw ? { selections: [{ id: "contextWindow", value: raw }] } : {}),
+  });
+  const descriptor = descriptors.find((candidate) => candidate.id === "contextWindow");
+  const value = getProviderOptionCurrentValue(descriptor);
+  return typeof value === "string" ? value : undefined;
+}
+
 export function resolveClaudeApiModelId(modelSelection: ModelSelection): string {
-  switch (getModelSelectionStringOptionValue(modelSelection, "contextWindow")) {
+  switch (resolveClaudeContextWindow(modelSelection)) {
     case "1m":
       return `${modelSelection.model}[1m]`;
     default:
@@ -493,6 +509,44 @@ function apiProviderAuthMetadata(
 // account info. The previous 8s budget expired mid-init, so the probe returned
 // `undefined` and left the provider unverified and unselectable in the picker.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
+
+/**
+ * Keep workspace-scoped command discovery intact while isolating the periodic
+ * health check from configured MCP servers.
+ */
+export const CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES = [
+  "user",
+  "project",
+  "local",
+] as const satisfies ReadonlyArray<SettingSource>;
+
+/** Build the exact SDK options used by the periodic Claude capability probe. */
+export function buildClaudeCapabilitiesProbeQueryOptions(input: {
+  readonly executablePath: string;
+  readonly abortController: AbortController;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly cwd: string | undefined;
+}): ClaudeQueryOptions {
+  return {
+    persistSession: false,
+    pathToClaudeCodeExecutable: input.executablePath,
+    abortController: input.abortController,
+    settingSources: [...CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES],
+    allowedTools: [],
+    // Ignore MCP definitions from every filesystem setting source above. The
+    // SDK combines this empty explicit map with --strict-mcp-config.
+    mcpServers: {},
+    strictMcpConfig: true,
+    env: {
+      ...input.environment,
+      // Connected claude.ai MCP servers are discovered outside filesystem
+      // config; disable them independently for this health check.
+      ENABLE_CLAUDEAI_MCP_SERVERS: "false",
+    },
+    ...(input.cwd ? { cwd: input.cwd } : {}),
+    stderr: () => {},
+  };
+}
 
 function nonEmptyProbeString(value: string): string | undefined {
   const candidate = value.trim();
@@ -617,16 +671,12 @@ const probeClaudeCapabilities = (
         prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
           await waitForAbortSignal(abort.signal);
         })(),
-        options: {
-          persistSession: false,
-          pathToClaudeCodeExecutable: executablePath,
+        options: buildClaudeCapabilitiesProbeQueryOptions({
+          executablePath,
           abortController: abort,
-          settingSources: ["user", "project", "local"],
-          allowedTools: [],
-          env: claudeEnvironment,
-          ...(cwd ? { cwd } : {}),
-          stderr: () => {},
-        },
+          environment: claudeEnvironment,
+          cwd,
+        }),
       });
       const init = await q.initializationResult();
       const account = init.account as
@@ -691,7 +741,6 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const allModels = providerModelsFromSettings(
     BUILT_IN_MODELS,
-    PROVIDER,
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
@@ -782,7 +831,6 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 
   const models = providerModelsFromSettings(
     getBuiltInClaudeModelsForVersion(parsedVersion),
-    PROVIDER,
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
@@ -851,7 +899,6 @@ export const makePendingClaudeProvider = (
     const checkedAt = yield* nowIso;
     const models = providerModelsFromSettings(
       BUILT_IN_MODELS,
-      PROVIDER,
       claudeSettings.customModels,
       DEFAULT_CLAUDE_MODEL_CAPABILITIES,
     );
