@@ -578,7 +578,7 @@ interface StagePackageJson {
   };
 }
 
-export const STAGE_INSTALL_ARGS = ["install", "--prod", "--", "--fetch-timeout", "180000"] as const;
+export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ASAR_UNPACK = ["node_modules/@ff-labs/fff-bin-*/**/*"] as const;
 
 export interface MacPasskeySigningConfiguration {
@@ -1469,16 +1469,6 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
     }
     buildConfig.win = winConfig;
-
-    buildConfig.nsis = {
-      oneClick: false,
-      perMachine: false,
-      allowToChangeInstallationDirectory: false,
-      deleteAppDataOnUninstall: false,
-      guid: "com.t3tools.t3code",
-      warningsAsErrors: false,
-      runAfterFinish: true,
-    };
   }
 
   return buildConfig;
