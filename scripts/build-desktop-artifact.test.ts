@@ -495,6 +495,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(win.icon, "icon.ico");
       assert.equal(win.signAndEditExecutable, true);
       assert.notProperty(win, "azureSignOptions");
+
+      const nsis = config.nsis as Record<string, unknown>;
+      assert.ok(nsis);
+      assert.equal(nsis.oneClick, false);
+      assert.equal(nsis.perMachine, false);
+      assert.equal(nsis.guid, "com.t3tools.t3code");
+      assert.equal(nsis.warningsAsErrors, false);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 

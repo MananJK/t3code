@@ -1469,6 +1469,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
     }
     buildConfig.win = winConfig;
+    buildConfig.nsis = {
+      oneClick: false,
+      perMachine: false,
+      allowToChangeInstallationDirectory: false,
+      deleteAppDataOnUninstall: false,
+      guid: DESKTOP_APP_ID,
+      warningsAsErrors: false,
+      runAfterFinish: true,
+    };
   }
 
   return buildConfig;

@@ -1,6 +1,8 @@
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -72,6 +74,8 @@ function addScopedListener<Args extends ReadonlyArray<unknown>>(
   ).pipe(Effect.asVoid);
 }
 
+const SHUTDOWN_TIMEOUT = Duration.seconds(10);
+
 const requestDesktopShutdownAndWait = Effect.fn("desktop.lifecycle.requestShutdownAndWait")(
   function* (): Effect.fn.Return<
     void,
@@ -82,7 +86,12 @@ const requestDesktopShutdownAndWait = Effect.fn("desktop.lifecycle.requestShutdo
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
     yield* desktopWindow.flushMainWindowBounds;
     yield* shutdown.request;
-    yield* shutdown.awaitComplete;
+    const completed = yield* shutdown.awaitComplete.pipe(
+      Effect.timeoutOption(SHUTDOWN_TIMEOUT),
+    );
+    if (Option.isNone(completed)) {
+      yield* logLifecycleInfo("shutdown timed out, proceeding anyway");
+    }
   },
 );
 
