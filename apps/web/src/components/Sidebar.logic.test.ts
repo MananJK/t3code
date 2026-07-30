@@ -19,6 +19,7 @@ import {
   resolveSidebarV2Status,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
+  shouldShowFloatingSidebarControl,
   formatWorkingDurationLabel,
   shouldNavigateAfterProjectRemoval,
   shouldClearThreadSelectionOnMouseDown,
@@ -45,6 +46,35 @@ import {
 } from "../types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("shouldShowFloatingSidebarControl", () => {
+  it("hides the floating control while the mobile sidebar supplies its close control", () => {
+    expect(
+      shouldShowFloatingSidebarControl({
+        isMobile: true,
+        isSidebarVisible: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the floating control available to open a closed mobile sidebar", () => {
+    expect(
+      shouldShowFloatingSidebarControl({
+        isMobile: true,
+        isSidebarVisible: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the floating control visible on desktop", () => {
+    expect(
+      shouldShowFloatingSidebarControl({
+        isMobile: false,
+        isSidebarVisible: true,
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("shouldNavigateAfterProjectRemoval", () => {
   const projectThreads = [{ environmentId: "environment-local", id: "thread-1" }];
