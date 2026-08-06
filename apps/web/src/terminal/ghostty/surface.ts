@@ -36,6 +36,13 @@ const CONTENT_PADDING = 4;
 const MIN_SCROLLBAR_THUMB_HEIGHT = 18;
 /** Half a blink cycle: the visible and hidden phases are equally long. */
 const CURSOR_BLINK_INTERVAL_MS = 500;
+const TERMINAL_FONT_LOAD_TEXT = "iMW0@# .";
+const TERMINAL_FONT_LOAD_VARIANTS = [
+  "normal 400",
+  "normal 700",
+  "italic 400",
+  "italic 700",
+] as const;
 
 /** Requested terminal font; omitted fields fall back to the defaults. */
 export interface GhosttyTerminalFont {
@@ -78,6 +85,13 @@ function quoteTerminalFontFamilies(list: string): string {
     .join(", ");
 }
 
+function uncheckedTerminalFontFamily(family?: string): string {
+  const custom = family === undefined ? "" : quoteTerminalFontFamilies(family);
+  return custom.length === 0
+    ? DEFAULT_TERMINAL_FONT_FAMILY
+    : `${custom}, ${TERMINAL_GLYPH_FALLBACKS}`;
+}
+
 export function terminalFontFamily(family?: string): string {
   // Quote non-ident names ("3270 Nerd Font", "M+ 1m"): an unquoted one makes
   // the whole canvas font string invalid and the assignment silently no-ops.
@@ -88,43 +102,31 @@ export function terminalFontFamily(family?: string): string {
   // it here rather than render a ragged grid with a stranded cursor.
   if (!isMonospaceFamily(custom)) return DEFAULT_TERMINAL_FONT_FAMILY;
   // A custom face keeps the glyph fallbacks so prompt symbols stay covered.
-  return `${custom}, ${TERMINAL_GLYPH_FALLBACKS}`;
+  return uncheckedTerminalFontFamily(custom);
 }
 
-/**
- * Grids narrower than a classic 80-column terminal wrap command output hard,
- * so the rendered font size follows the canvas width: the preference is the
- * ceiling, and the size slides down (to a legibility floor) until a full-width
- * grid fits. A widening pane slides it back up toward the preference.
- */
-const MIN_TERMINAL_FIT_COLUMNS = 80;
-const MIN_TERMINAL_FIT_FONT_SIZE = 8;
-
-export function fittedTerminalFontSize(
-  cellWidthAt: (size: number) => number,
-  requested: number,
-  mountWidth: number,
-): number {
-  const available = mountWidth - CONTENT_PADDING * 2;
-  if (available <= 0) return requested;
-  const floor = Math.min(requested, MIN_TERMINAL_FIT_FONT_SIZE);
-  const fits = (cellWidth: number) =>
-    cellWidth > 0 && Math.floor(available / cellWidth) >= MIN_TERMINAL_FIT_COLUMNS;
-  let cellWidth = cellWidthAt(requested);
-  if (cellWidth <= 0 || fits(cellWidth)) return requested;
-  // The advance scales linearly with size for monospace faces: jump close to
-  // the fitting size, then settle the remaining rounding one step at a time.
-  const targetCellWidth = available / MIN_TERMINAL_FIT_COLUMNS;
-  let size = Math.max(
-    floor,
-    Math.min(requested, Math.floor((requested * targetCellWidth) / cellWidth)),
-  );
-  while (size > floor) {
-    cellWidth = cellWidthAt(size);
-    if (cellWidth <= 0 || fits(cellWidth)) break;
-    size -= 1;
+/** Load every style the renderer can request, then validate the actual face. */
+export async function loadTerminalFontFamily(
+  family: string | undefined,
+  size: number,
+  environment?: {
+    readonly load: (font: string, text: string) => Promise<unknown>;
+    readonly resolve: (family: string | undefined) => string;
+  },
+): Promise<string> {
+  const candidate = uncheckedTerminalFontFamily(family);
+  const load =
+    environment?.load ?? ((font: string, text: string) => document.fonts.load(font, text));
+  try {
+    await Promise.all(
+      TERMINAL_FONT_LOAD_VARIANTS.map((variant) =>
+        load(`${variant} ${size}px ${candidate}`, TERMINAL_FONT_LOAD_TEXT),
+      ),
+    );
+  } catch {
+    // The fixed-width fallback stack remains available if a face cannot load.
   }
-  return size;
+  return (environment?.resolve ?? terminalFontFamily)(family);
 }
 
 export function terminalFontSize(size?: number): number {
@@ -479,9 +481,10 @@ export class GhosttyTerminalSurface {
   private readonly options: GhosttyTerminalSurfaceOptions;
   private metrics: GhosttyCellMetrics;
   private fontFamily: string;
+  private requestedFontFamily: string | undefined;
   private fontSize: number;
-  private requestedFontSize: number;
   private fontEpoch = 0;
+  private pendingFontEpoch: number | null = null;
   private readonly resizeObserver: ResizeObserver;
   private readonly scrollbarThumb: HTMLDivElement;
   private snapshot: GhosttySnapshot | null = null;
@@ -545,6 +548,7 @@ export class GhosttyTerminalSurface {
     context: CanvasRenderingContext2D,
     core: GhosttyTerminalCore,
     metrics: GhosttyCellMetrics,
+    fontFamily: string,
     options: GhosttyTerminalSurfaceOptions,
   ) {
     this.mount = mount;
@@ -557,9 +561,9 @@ export class GhosttyTerminalSurface {
     this.metrics = metrics;
     this.options = options;
     this.theme = options.theme;
-    this.fontFamily = terminalFontFamily(options.font?.family);
+    this.fontFamily = fontFamily;
+    this.requestedFontFamily = options.font?.family;
     this.fontSize = terminalFontSize(options.font?.size);
-    this.requestedFontSize = this.fontSize;
     this.resizeObserver = new ResizeObserver(() => this.fit());
     this.installEvents();
     this.watchDevicePixelRatio();
@@ -600,16 +604,20 @@ export class GhosttyTerminalSurface {
 
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("Canvas 2D is unavailable");
-    const fontFamily = terminalFontFamily(options.font?.family);
+    // An opaque canvas backing store initializes to solid black, and the font
+    // and WASM loads below leave it on screen for the whole setup window; paint
+    // the theme background first so the mount never flashes a black box.
+    context.fillStyle = `rgb(${options.theme.background.r}, ${options.theme.background.g}, ${options.theme.background.b})`;
+    context.fillRect(0, 0, canvas.width, canvas.height);
     const fontSize = terminalFontSize(options.font?.size);
     try {
       // Cell metrics must come from the faces that will render; measuring before
       // the bundled webfonts load would size the grid from a fallback font.
       await ensureTerminalSymbolsFont();
-      await document.fonts.load(`${fontSize}px ${fontFamily}`);
     } catch {
       // Metrics fall back to whichever faces are already available.
     }
+    const fontFamily = await loadTerminalFontFamily(options.font?.family, fontSize);
     const metrics = measureGhosttyCell(context, fontSize, fontFamily);
     const grid = terminalGridSize(mount.clientWidth, mount.clientHeight, metrics, CONTENT_PADDING);
     const core = await GhosttyTerminalCore.create(
@@ -629,6 +637,7 @@ export class GhosttyTerminalSurface {
       context,
       core,
       metrics,
+      fontFamily,
       options,
     );
     surface.fit();
@@ -667,19 +676,16 @@ export class GhosttyTerminalSurface {
 
   async setFont(font: GhosttyTerminalFont): Promise<void> {
     if (this.disposed) return;
-    const fontFamily = terminalFontFamily(font.family);
     const fontSize = terminalFontSize(font.size);
     // The fields only change together with their metrics after the load, and
     // the epoch lets the newest overlapping call win regardless of load order.
     const epoch = ++this.fontEpoch;
-    try {
-      await document.fonts.load(`${fontSize}px ${fontFamily}`);
-    } catch {
-      // Metrics fall back to whichever faces are already available.
-    }
+    this.pendingFontEpoch = epoch;
+    const fontFamily = await loadTerminalFontFamily(font.family, fontSize);
     if (this.disposed || epoch !== this.fontEpoch) return;
+    this.pendingFontEpoch = null;
     this.fontFamily = fontFamily;
-    this.requestedFontSize = fontSize;
+    this.requestedFontFamily = font.family;
     this.fontSize = fontSize;
     this.applyFontMetrics();
   }
@@ -706,6 +712,17 @@ export class GhosttyTerminalSurface {
 
   private readonly onFontsLoaded = () => {
     if (this.disposed) return;
+    // The explicit load validates every style and applies the newest request.
+    // Its own loading events must not revalidate the previously applied face.
+    if (this.pendingFontEpoch !== null) return;
+    // A face may become available after an earlier fallback measurement. Run
+    // the fixed-width guard again before using its newly loaded metrics.
+    const fontFamily = terminalFontFamily(this.requestedFontFamily);
+    if (fontFamily !== this.fontFamily) {
+      this.fontFamily = fontFamily;
+      this.applyFontMetrics();
+      return;
+    }
     // A face that finished loading after the initial measurement changes glyph
     // advances; re-measure and refit so the grid matches what actually renders.
     const metrics = measureGhosttyCell(this.context, this.fontSize, this.fontFamily);
@@ -724,22 +741,6 @@ export class GhosttyTerminalSurface {
     const width = this.mount.clientWidth;
     const height = this.mount.clientHeight;
     if (width <= 0 || height <= 0) return false;
-    const fitted = fittedTerminalFontSize(
-      (size) => measureGhosttyCell(this.context, size, this.fontFamily).width,
-      this.requestedFontSize,
-      width,
-    );
-    if (fitted !== this.fontSize) {
-      this.fontSize = fitted;
-      this.metrics = measureGhosttyCell(this.context, this.fontSize, this.fontFamily);
-      // The grid-change branch below resizes the core, but only when the
-      // column count moved; the cell geometry always did, so sync it here.
-      this.core.resize(this.cols, this.rows, this.metrics.width, this.metrics.height);
-      this.inputLeft = -1;
-      this.inputTop = -1;
-      this.forceFullRender = true;
-      this.scrollbarDirty = true;
-    }
     const ratio = window.devicePixelRatio || 1;
     const pixelWidth = Math.max(1, Math.round(width * ratio));
     const pixelHeight = Math.max(1, Math.round(height * ratio));
