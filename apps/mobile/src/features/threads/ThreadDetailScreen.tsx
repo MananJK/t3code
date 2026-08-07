@@ -17,7 +17,11 @@ import type {
 import * as Haptics from "expo-haptics";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Platform, View, type GestureResponderEvent } from "react-native";
-import { KeyboardController, KeyboardStickyView } from "react-native-keyboard-controller";
+import {
+  KeyboardController,
+  KeyboardStickyView,
+  useKeyboardState,
+} from "react-native-keyboard-controller";
 import Animated, { FadeInDown, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -34,6 +38,7 @@ import type {
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
 import { PendingUserInputCard } from "./PendingUserInputCard";
+import { resolveComposerBottomInset } from "./composerBottomInset";
 import {
   COMPOSER_COLLAPSED_CHROME,
   COMPOSER_EXPANDED_CHROME,
@@ -183,7 +188,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const lastScrolledAnchorMessageIdRef = useRef<MessageId | null>(null);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [anchorMessageId, setAnchorMessageId] = useState<MessageId | null>(null);
-  const composerBottomInset = composerExpanded ? 0 : Math.max(insets.bottom, 12);
+  const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
+  const composerBottomInset = resolveComposerBottomInset({
+    expanded: composerExpanded,
+    keyboardVisible: isKeyboardVisible,
+    safeAreaBottom: insets.bottom,
+  });
   const contentPresentationKind = props.contentPresentation.kind;
   // The raw sync status enters "synchronizing" on every full fetch, cached or
   // not. Whether messages are already on screen decides the pill label: no
