@@ -1,3 +1,9 @@
+param(
+    [switch]$SkipInstall,
+    [ValidateRange(1, [int]::MaxValue)]
+    [int]$FetchTimeoutMs = 300000
+)
+
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
@@ -27,9 +33,33 @@ $previousHostedAppChannel = [Environment]::GetEnvironmentVariable(
     "VITE_HOSTED_APP_CHANNEL",
     [EnvironmentVariableTarget]::Process
 )
+$previousPnpmFetchTimeout = [Environment]::GetEnvironmentVariable(
+    "PNPM_CONFIG_FETCH_TIMEOUT",
+    [EnvironmentVariableTarget]::Process
+)
 
 Push-Location $repoRoot
 try {
+    # Desktop staging installs every supported provider's production package,
+    # including large platform archives that can exceed pnpm's default timeout.
+    $env:PNPM_CONFIG_FETCH_TIMEOUT = $FetchTimeoutMs
+
+    if (-not $SkipInstall) {
+        $localVp = Join-Path $repoRoot "node_modules\.bin\vp.cmd"
+        $vp = if (Test-Path -Path $localVp -PathType Leaf) {
+            $localVp
+        }
+        else {
+            (Get-Command vp -ErrorAction Stop).Source
+        }
+
+        Write-Host "Syncing workspace dependencies..."
+        & $vp i
+        if ($LASTEXITCODE -ne 0) {
+            throw "Workspace dependency sync failed with exit code $LASTEXITCODE."
+        }
+    }
+
     $env:T3CODE_DESKTOP_VERSION = $nightlyVersion
 
     # This flag is only for hosted app.t3.codes deployments. Baking it into
@@ -55,6 +85,13 @@ finally {
     }
     else {
         $env:VITE_HOSTED_APP_CHANNEL = $previousHostedAppChannel
+    }
+
+    if ($null -eq $previousPnpmFetchTimeout) {
+        Remove-Item Env:PNPM_CONFIG_FETCH_TIMEOUT -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:PNPM_CONFIG_FETCH_TIMEOUT = $previousPnpmFetchTimeout
     }
 
     Pop-Location
