@@ -16,7 +16,13 @@ import type {
 } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Platform, View, type GestureResponderEvent } from "react-native";
+import {
+  Platform,
+  ScrollView,
+  useWindowDimensions,
+  View,
+  type GestureResponderEvent,
+} from "react-native";
 import {
   KeyboardController,
   KeyboardStickyView,
@@ -178,6 +184,7 @@ function useStreamingHaptics(threadId: ThreadId, feed: ReadonlyArray<ThreadFeedE
 
 export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: ThreadDetailScreenProps) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const agentLabel = `${props.selectedThread.modelSelection.instanceId} agent`;
   const selectedThreadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
   const composerEditorRef = useRef<ComposerEditorHandle>(null);
@@ -403,28 +410,37 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             <View className="w-full self-center" style={{ maxWidth: contentMaxWidth }}>
               {props.activePendingApproval || props.activePendingUserInput ? (
                 <Animated.View
-                  className="shrink-0 gap-3 px-4 pb-3"
+                  className="shrink-0"
                   entering={FadeInDown.duration(220)}
                   exiting={FadeOut.duration(140)}
                 >
-                  {props.activePendingApproval ? (
-                    <PendingApprovalCard
-                      approval={props.activePendingApproval}
-                      respondingApprovalId={props.respondingApprovalId}
-                      onRespond={props.onRespondToApproval}
-                    />
-                  ) : null}
-                  {props.activePendingUserInput ? (
-                    <PendingUserInputCard
-                      pendingUserInput={props.activePendingUserInput}
-                      drafts={props.activePendingUserInputDrafts}
-                      answers={props.activePendingUserInputAnswers}
-                      respondingUserInputId={props.respondingUserInputId}
-                      onSelectOption={props.onSelectUserInputOption}
-                      onChangeCustomAnswer={props.onChangeUserInputCustomAnswer}
-                      onSubmit={props.onSubmitUserInput}
-                    />
-                  ) : null}
+                  {/* Pending cards grow upward from the composer with no scroll
+                      of their own; cap the stack so long question lists scroll
+                      instead of running off the top of the screen. */}
+                  <ScrollView
+                    style={{ maxHeight: Math.round(windowHeight * 0.6) }}
+                    contentContainerClassName="gap-3 px-4 pb-3"
+                    keyboardShouldPersistTaps="always"
+                  >
+                    {props.activePendingApproval ? (
+                      <PendingApprovalCard
+                        approval={props.activePendingApproval}
+                        respondingApprovalId={props.respondingApprovalId}
+                        onRespond={props.onRespondToApproval}
+                      />
+                    ) : null}
+                    {props.activePendingUserInput ? (
+                      <PendingUserInputCard
+                        pendingUserInput={props.activePendingUserInput}
+                        drafts={props.activePendingUserInputDrafts}
+                        answers={props.activePendingUserInputAnswers}
+                        respondingUserInputId={props.respondingUserInputId}
+                        onSelectOption={props.onSelectUserInputOption}
+                        onChangeCustomAnswer={props.onChangeUserInputCustomAnswer}
+                        onSubmit={props.onSubmitUserInput}
+                      />
+                    ) : null}
+                  </ScrollView>
                 </Animated.View>
               ) : null}
             </View>
