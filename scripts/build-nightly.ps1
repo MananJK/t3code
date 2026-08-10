@@ -37,6 +37,10 @@ $previousPnpmFetchTimeout = [Environment]::GetEnvironmentVariable(
     "PNPM_CONFIG_FETCH_TIMEOUT",
     [EnvironmentVariableTarget]::Process
 )
+$previousCi = [Environment]::GetEnvironmentVariable(
+    "CI",
+    [EnvironmentVariableTarget]::Process
+)
 
 Push-Location $repoRoot
 try {
@@ -46,17 +50,43 @@ try {
 
     if (-not $SkipInstall) {
         $localVp = Join-Path $repoRoot "node_modules\.bin\vp.cmd"
-        $vp = if (Test-Path -Path $localVp -PathType Leaf) {
-            $localVp
+        if (Test-Path -Path $localVp -PathType Leaf) {
+            Write-Host "Syncing workspace dependencies..."
+            & $localVp i
         }
         else {
-            (Get-Command vp -ErrorAction Stop).Source
+            # A node_modules tree last installed on Linux only has POSIX bin
+            # links. Re-run the pinned package manager to recreate Windows
+            # shims before anything tries to invoke vp.cmd.
+            $env:CI = "true"
+            $pnpm = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
+            if ($null -eq $pnpm) {
+                $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+            }
+
+            if ($null -ne $pnpm) {
+                Write-Host "Restoring Windows workspace dependencies with pnpm..."
+                & $pnpm.Source install
+            }
+            else {
+                $corepack = Get-Command corepack.cmd -ErrorAction SilentlyContinue
+                if ($null -eq $corepack) {
+                    $corepack = Get-Command corepack -ErrorAction SilentlyContinue
+                }
+                if ($null -eq $corepack) {
+                    throw "Could not find vp.cmd, pnpm, or corepack. Install pnpm and rerun this script."
+                }
+
+                Write-Host "Restoring Windows workspace dependencies with Corepack..."
+                & $corepack.Source pnpm install
+            }
         }
 
-        Write-Host "Syncing workspace dependencies..."
-        & $vp i
         if ($LASTEXITCODE -ne 0) {
             throw "Workspace dependency sync failed with exit code $LASTEXITCODE."
+        }
+        if (-not (Test-Path -Path $localVp -PathType Leaf)) {
+            throw "Workspace dependency sync completed without creating $localVp."
         }
     }
 
@@ -92,6 +122,13 @@ finally {
     }
     else {
         $env:PNPM_CONFIG_FETCH_TIMEOUT = $previousPnpmFetchTimeout
+    }
+
+    if ($null -eq $previousCi) {
+        Remove-Item Env:CI -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:CI = $previousCi
     }
 
     Pop-Location
