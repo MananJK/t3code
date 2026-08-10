@@ -10,6 +10,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
+import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { Button } from "../components/ui/button";
 import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
 import { isElectron } from "../env";
@@ -78,9 +79,9 @@ function SettingsContentLayout() {
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
-            <div className="flex min-h-7 items-center gap-2 sm:min-h-6">
+            <div className="flex w-full items-center gap-2">
               <SidebarTrigger className="size-7 shrink-0" />
-              <span className="text-sm font-medium text-foreground">Settings</span>
+              <SettingsBreadcrumb pathname={location.pathname} />
               {showRestoreDefaults ? (
                 <div className="ms-auto flex items-center gap-2">
                   <RestoreDefaultsButton onRestored={handleRestored} />
@@ -97,15 +98,15 @@ function SettingsContentLayout() {
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
-            <SidebarTrigger className="mr-2 size-7 shrink-0" />
-            <span className="text-xs font-medium tracking-wide text-muted-foreground/70">
-              Settings
-            </span>
-            {showRestoreDefaults ? (
-              <div className="ms-auto flex items-center gap-2">
-                <RestoreDefaultsButton onRestored={handleRestored} />
-              </div>
-            ) : null}
+            <div className="flex w-full items-center gap-2">
+              <SidebarTrigger className="size-7 shrink-0" />
+              <SettingsBreadcrumb pathname={location.pathname} />
+              {showRestoreDefaults ? (
+                <div className="ms-auto flex items-center gap-2">
+                  <RestoreDefaultsButton onRestored={handleRestored} />
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
 
