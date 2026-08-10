@@ -12,7 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { Button } from "../components/ui/button";
-import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
+import { SidebarInset } from "../components/ui/sidebar";
 import { isElectron } from "../env";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
@@ -80,7 +80,6 @@ function SettingsContentLayout() {
             )}
           >
             <div className="flex w-full items-center gap-2">
-              <SidebarTrigger className="size-7 shrink-0" />
               <SettingsBreadcrumb pathname={location.pathname} />
               {showRestoreDefaults ? (
                 <div className="ms-auto flex items-center gap-2">
@@ -99,7 +98,6 @@ function SettingsContentLayout() {
             )}
           >
             <div className="flex w-full items-center gap-2">
-              <SidebarTrigger className="size-7 shrink-0" />
               <SettingsBreadcrumb pathname={location.pathname} />
               {showRestoreDefaults ? (
                 <div className="ms-auto flex items-center gap-2">
