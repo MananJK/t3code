@@ -1,3 +1,5 @@
+import { isElectron } from "~/env";
+
 export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
@@ -5,7 +7,6 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/source-control"
   | "/settings/connections"
-  | "/settings/beta"
   | "/settings/archived";
 
 export interface SettingsSearchItem {
@@ -13,6 +14,9 @@ export interface SettingsSearchItem {
   readonly title: string;
   readonly to: SettingsPath;
   readonly targetId?: string;
+  // Its row only renders in the desktop app, so a browser result would land on
+  // an anchor that isn't there.
+  readonly desktopOnly?: boolean;
 }
 
 /**
@@ -26,7 +30,6 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": "Providers",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
-  "/settings/beta": "Beta",
   "/settings/archived": "Archive",
 };
 
@@ -101,6 +104,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "auto-settle-inactive-threads",
+    title: "Auto-settle inactive threads",
+    to: "/settings/general",
+  },
+  {
+    id: "auto-settle-merged-threads",
+    title: "Auto-settle merged threads",
+    to: "/settings/general",
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",
@@ -108,11 +121,6 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "hide-whitespace-changes",
     title: "Hide whitespace changes",
-    to: "/settings/general",
-  },
-  {
-    id: "assistant-output",
-    title: "Assistant output",
     to: "/settings/general",
   },
   {
@@ -147,6 +155,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "quit-confirmation",
+    title: "Hold to quit",
+    to: "/settings/general",
+    desktopOnly: true,
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/general",
@@ -154,6 +168,21 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "diagnostics",
     title: "Diagnostics",
+    to: "/settings/general",
+  },
+  {
+    id: "legacy-plan-mode",
+    title: "Plan mode (legacy)",
+    to: "/settings/general",
+  },
+  {
+    id: "legacy-token-streaming",
+    title: "Stream token by token (legacy)",
+    to: "/settings/general",
+  },
+  {
+    id: "legacy-sidebar",
+    title: "Sidebar (legacy)",
     to: "/settings/general",
   },
   {
@@ -175,22 +204,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "remote-environments",
     title: "Remote environments",
     to: "/settings/connections",
-  },
-  {
-    id: "sidebar-v2",
-    title: "Sidebar v2",
-    to: "/settings/beta",
-  },
-  {
-    id: "auto-settle-inactive-threads",
-    title: "Auto-settle inactive threads",
-    to: "/settings/beta",
-    targetId: "sidebar-v2",
-  },
-  {
-    id: "restore-plan-mode",
-    title: "Restore plan mode (legacy)",
-    to: "/settings/beta",
   },
   {
     id: "archive",
@@ -234,5 +247,9 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
-  return items.filter((item) => normalizeSearchText(item.title).includes(normalizedQuery));
+  return items.filter(
+    (item) =>
+      (isElectron || item.desktopOnly !== true) &&
+      normalizeSearchText(item.title).includes(normalizedQuery),
+  );
 }

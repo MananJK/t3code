@@ -166,6 +166,8 @@ function SidebarProvider({
           {
             "--sidebar-width": SIDEBAR_WIDTH,
             "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
+            "--workspace-titlebar-content-left":
+              "calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap))",
             ...style,
           } as React.CSSProperties
         }
@@ -317,8 +319,8 @@ function Sidebar({
 }
 
 function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
-  const { isMobile, open, openMobile, toggleSidebar } = useSidebar();
-  const isOpen = isMobile ? openMobile : open;
+  const { toggleSidebar } = useSidebar();
+  const isOpen = useSidebarVisibility();
 
   return (
     <Button
