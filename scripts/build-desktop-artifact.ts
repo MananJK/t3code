@@ -2064,10 +2064,6 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
   if (platform === "win") {
     buildConfig.npmRebuild = false;
-    // Keep blockmap-based differential downloads enabled while changing the
-    // installed file topology. The optimization is in the payload shape, not
-    // in trading update bandwidth for install speed.
-    buildConfig.nsis = { differentialPackage: true };
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
@@ -2081,6 +2077,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     }
     buildConfig.win = winConfig;
     buildConfig.nsis = {
+      // Keep blockmap-based differential downloads enabled while changing the
+      // installed file topology. The optimization is in the payload shape, not
+      // in trading update bandwidth for install speed.
+      differentialPackage: true,
       oneClick: false,
       perMachine: false,
       allowToChangeInstallationDirectory: false,

@@ -449,7 +449,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         },
         ...WINDOWS_SERVER_EXTRA_RESOURCES,
       ]);
-      assert.deepStrictEqual(win.nsis, { differentialPackage: true });
+      assert.equal((win.nsis as Record<string, unknown>).differentialPackage, true);
       // Native binaries and helper executables cannot load from inside an
       // asar; everything else stays packed. The Claude SDK platform packages
       // and .bin shims never ship.
