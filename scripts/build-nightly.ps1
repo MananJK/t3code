@@ -7,6 +7,26 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+function Test-NodeModulesVisibleFrom {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $candidate = [System.IO.Path]::GetFullPath($Path)
+    while ($true) {
+        if (Test-Path -LiteralPath (Join-Path $candidate "node_modules") -PathType Container) {
+            return $true
+        }
+
+        $parent = Split-Path -Parent $candidate
+        if ([string]::IsNullOrEmpty($parent) -or $parent -eq $candidate) {
+            return $false
+        }
+        $candidate = $parent
+    }
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $pkgPath = Join-Path $repoRoot "apps\desktop\package.json"
 $pkg = Get-Content -Raw -Path $pkgPath | ConvertFrom-Json
@@ -41,9 +61,39 @@ $previousCi = [Environment]::GetEnvironmentVariable(
     "CI",
     [EnvironmentVariableTarget]::Process
 )
+$previousTemp = [Environment]::GetEnvironmentVariable(
+    "TEMP",
+    [EnvironmentVariableTarget]::Process
+)
+$previousTmp = [Environment]::GetEnvironmentVariable(
+    "TMP",
+    [EnvironmentVariableTarget]::Process
+)
+$previousTmpDir = [Environment]::GetEnvironmentVariable(
+    "TMPDIR",
+    [EnvironmentVariableTarget]::Process
+)
+
+$nightlyTempParent = Split-Path -Parent $repoRoot
+while (Test-NodeModulesVisibleFrom $nightlyTempParent) {
+    $parent = Split-Path -Parent $nightlyTempParent
+    if ([string]::IsNullOrEmpty($parent) -or $parent -eq $nightlyTempParent) {
+        throw "Could not find a temporary directory whose ancestors do not contain node_modules."
+    }
+    $nightlyTempParent = $parent
+}
+$nightlyTempRoot = Join-Path $nightlyTempParent "t3code-nightly-temp"
 
 Push-Location $repoRoot
 try {
+    # The artifact self-containment probe must run outside both the workspace
+    # node_modules tree and user-level Node installs. Node uses TEMP on Windows;
+    # TMPDIR alone only affects Unix hosts.
+    New-Item -ItemType Directory -Force -Path $nightlyTempRoot | Out-Null
+    $env:TEMP = $nightlyTempRoot
+    $env:TMP = $nightlyTempRoot
+    $env:TMPDIR = $nightlyTempRoot
+
     # Desktop staging installs every supported provider's production package,
     # including large platform archives that can exceed pnpm's default timeout.
     $env:PNPM_CONFIG_FETCH_TIMEOUT = $FetchTimeoutMs
@@ -129,6 +179,27 @@ finally {
     }
     else {
         $env:CI = $previousCi
+    }
+
+    if ($null -eq $previousTemp) {
+        Remove-Item Env:TEMP -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:TEMP = $previousTemp
+    }
+
+    if ($null -eq $previousTmp) {
+        Remove-Item Env:TMP -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:TMP = $previousTmp
+    }
+
+    if ($null -eq $previousTmpDir) {
+        Remove-Item Env:TMPDIR -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:TMPDIR = $previousTmpDir
     }
 
     Pop-Location
