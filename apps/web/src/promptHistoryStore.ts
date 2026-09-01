@@ -3,13 +3,11 @@ import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { type DraftId } from "./composerDraftStore";
-
 export const PROMPT_HISTORY_STORAGE_KEY = "t3code:prompt-history:v1";
 export const PROMPT_HISTORY_LIMIT = 100;
 
-export function getPromptHistoryKey(target: ScopedThreadRef | DraftId): string {
-  return typeof target === "string" ? `draft:${target}` : `server:${scopedThreadKey(target)}`;
+export function getPromptHistoryKey(threadRef: ScopedThreadRef): string {
+  return `server:${scopedThreadKey(threadRef)}`;
 }
 
 export interface PromptHistoryNavigationState {
@@ -37,23 +35,31 @@ function createFallbackStorage(): Storage {
   };
 }
 
-function normalizePrompt(prompt: string): string {
-  return prompt.trim();
-}
-
 export function addPromptToHistory(
   prompts: readonly string[],
   prompt: string,
   limit = PROMPT_HISTORY_LIMIT,
 ): string[] {
-  const normalizedPrompt = normalizePrompt(prompt);
-  if (normalizedPrompt.length === 0) {
+  if (prompt.trim().length === 0) {
     return [...prompts];
   }
 
-  const withoutConsecutiveDuplicate =
-    prompts.at(-1) === normalizedPrompt ? prompts.slice(0, -1) : prompts;
-  return [...withoutConsecutiveDuplicate, normalizedPrompt].slice(-limit);
+  const withoutConsecutiveDuplicate = prompts.at(-1) === prompt ? prompts.slice(0, -1) : prompts;
+  return [...withoutConsecutiveDuplicate, prompt].slice(-limit);
+}
+
+export function resolvePromptHistoryDirection(input: {
+  readonly key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab";
+  readonly cursor: number;
+  readonly isNavigating: boolean;
+}): "newer" | "older" | null {
+  if (input.key === "ArrowUp" && (input.isNavigating || input.cursor === 0)) {
+    return "older";
+  }
+  if (input.key === "ArrowDown" && input.isNavigating) {
+    return "newer";
+  }
+  return null;
 }
 
 export function navigatePromptHistory(input: {
@@ -63,9 +69,9 @@ export function navigatePromptHistory(input: {
   readonly state: PromptHistoryNavigationState | null;
 }): {
   readonly nextPrompt: string;
-  readonly nextState: PromptHistoryNavigationState;
+  readonly nextState: PromptHistoryNavigationState | null;
 } | null {
-  if (input.prompts.length === 0) {
+  if (input.prompts.length === 0 || (input.direction === "newer" && input.state === null)) {
     return null;
   }
 
@@ -85,10 +91,13 @@ export function navigatePromptHistory(input: {
 
   return {
     nextPrompt,
-    nextState: {
-      draft: initialState.draft,
-      index: nextIndex,
-    },
+    nextState:
+      nextIndex === input.prompts.length
+        ? null
+        : {
+            draft: initialState.draft,
+            index: nextIndex,
+          },
   };
 }
 

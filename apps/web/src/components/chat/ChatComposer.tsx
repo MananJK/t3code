@@ -339,6 +339,7 @@ import type { ReviewCommentContext } from "../../reviewCommentContext";
 import {
   navigatePromptHistory,
   type PromptHistoryNavigationState,
+  resolvePromptHistoryDirection,
   usePromptHistoryStore,
 } from "../../promptHistoryStore";
 
@@ -1253,7 +1254,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandReleaseFrameRef = useRef<number | null>(null);
   const mobileComposerExpandInFlightRef = useRef(false);
   const promptHistoryNavigationRef = useRef<PromptHistoryNavigationState | null>(null);
-  const isApplyingPromptHistoryRef = useRef(false);
   const stashPulseKeyRef = useRef(0);
   const stashPulseTimeoutRef = useRef<number | null>(null);
   const stashInFlightRef = useRef<Set<string>>(new Set());
@@ -1553,7 +1553,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const replacePromptFromHistory = useCallback(
     (nextPrompt: string) => {
-      isApplyingPromptHistoryRef.current = true;
       promptRef.current = nextPrompt;
       setPrompt(nextPrompt);
       const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
@@ -1562,7 +1561,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setComposerHighlightedItemId(null);
       window.requestAnimationFrame(() => {
         composerEditorRef.current?.focusAt(nextCursor);
-        isApplyingPromptHistoryRef.current = false;
       });
     },
     [promptRef, setPrompt],
@@ -1571,9 +1569,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const navigateComposerPromptHistory = useCallback(
     (direction: "newer" | "older"): boolean => {
       if (activePendingProgress !== null || pendingUserInputs.length > 0) {
+        promptHistoryNavigationRef.current = null;
         return false;
       }
-      if (composerImagesRef.current.length > 0 || composerTerminalContextsRef.current.length > 0) {
+      if (
+        composerImagesRef.current.length > 0 ||
+        composerFilesRef.current.length > 0 ||
+        composerTerminalContextsRef.current.length > 0 ||
+        composerElementContextsRef.current.length > 0 ||
+        composerPreviewAnnotations.length > 0 ||
+        composerReviewComments.length > 0
+      ) {
+        promptHistoryNavigationRef.current = null;
         return false;
       }
 
@@ -1593,7 +1600,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
     [
       activePendingProgress,
+      composerElementContextsRef,
+      composerFilesRef,
       composerImagesRef,
+      composerPreviewAnnotations.length,
+      composerReviewComments.length,
       composerTerminalContextsRef,
       pendingUserInputs.length,
       promptHistory,
@@ -1926,6 +1937,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       cursorAdjacentToMention: boolean,
       terminalContextIds: string[],
     ) => {
+      if (nextPrompt !== promptRef.current) {
+        promptHistoryNavigationRef.current = null;
+      }
       if (activePendingProgress?.activeQuestion && pendingUserInputs.length > 0) {
         setComposerCursor(nextCursor);
         setComposerTrigger(
@@ -2355,6 +2369,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onSelectComposerItem(selectedItem);
         return true;
       }
+    }
+    const promptHistoryDirection = resolvePromptHistoryDirection({
+      key,
+      cursor: composerCursor,
+      isNavigating: promptHistoryNavigationRef.current !== null,
+    });
+    if (promptHistoryDirection === "older") {
+      return navigateComposerPromptHistory("older");
+    }
+    if (promptHistoryDirection === "newer") {
+      return navigateComposerPromptHistory("newer");
     }
     const submissionIntent =
       key === "Enter"
@@ -3353,6 +3378,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }) => {
         const promptForState = options?.prompt ?? promptRef.current;
         const cursor = clampCollapsedComposerCursor(promptForState, options?.cursor ?? 0);
+        promptHistoryNavigationRef.current = null;
         setComposerHighlightedItemId(null);
         setComposerCursor(cursor);
         setComposerTrigger(

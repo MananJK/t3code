@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { addPromptToHistory, navigatePromptHistory } from "./promptHistoryStore";
+import {
+  addPromptToHistory,
+  navigatePromptHistory,
+  resolvePromptHistoryDirection,
+} from "./promptHistoryStore";
 
 describe("prompt history helpers", () => {
   it("ignores blank prompts", () => {
@@ -14,6 +18,56 @@ describe("prompt history helpers", () => {
       "three",
       "four",
     ]);
+  });
+
+  it("preserves the exact submitted prompt", () => {
+    expect(addPromptToHistory([], "  keep this indentation\n")).toEqual([
+      "  keep this indentation\n",
+    ]);
+  });
+
+  it("enters history with ArrowUp at the start of the prompt", () => {
+    expect(
+      resolvePromptHistoryDirection({
+        key: "ArrowUp",
+        cursor: 0,
+        isNavigating: false,
+      }),
+    ).toBe("older");
+  });
+
+  it("leaves arrow keys alone before history navigation starts", () => {
+    expect(
+      resolvePromptHistoryDirection({
+        key: "ArrowUp",
+        cursor: 4,
+        isNavigating: false,
+      }),
+    ).toBeNull();
+    expect(
+      resolvePromptHistoryDirection({
+        key: "ArrowDown",
+        cursor: 0,
+        isNavigating: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("routes both arrows while history navigation is active", () => {
+    expect(
+      resolvePromptHistoryDirection({
+        key: "ArrowUp",
+        cursor: 12,
+        isNavigating: true,
+      }),
+    ).toBe("older");
+    expect(
+      resolvePromptHistoryDirection({
+        key: "ArrowDown",
+        cursor: 12,
+        isNavigating: true,
+      }),
+    ).toBe("newer");
   });
 
   it("walks older prompts from the current draft", () => {
@@ -62,5 +116,6 @@ describe("prompt history helpers", () => {
 
     expect(newest?.nextPrompt).toBe("two");
     expect(draft?.nextPrompt).toBe("");
+    expect(draft?.nextState).toBeNull();
   });
 });

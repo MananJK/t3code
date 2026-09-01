@@ -1357,10 +1357,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
-  const promptHistoryKey = useMemo(
-    () => getPromptHistoryKey(composerDraftTarget),
-    [composerDraftTarget],
-  );
+  const promptHistoryKey = useMemo(() => getPromptHistoryKey(routeThreadRef), [routeThreadRef]);
   const draftThread = useComposerDraftStore((store) =>
     routeKind === "server"
       ? store.getDraftSessionByRef(routeThreadRef)
@@ -6180,7 +6177,6 @@ function ChatViewContent(props: ChatViewProps) {
           createdAt: messageCreatedAt,
         },
       });
-      addPromptToHistory(promptHistoryKey, promptForSend);
       if (startResult._tag === "Failure") {
         if (backgroundThreadRef) {
           clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
@@ -6188,6 +6184,7 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        addPromptToHistory(promptHistoryKey, promptForSend);
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
