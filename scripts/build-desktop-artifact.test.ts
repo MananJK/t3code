@@ -929,6 +929,70 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  for (const [arch, toolsComponent] of [
+    ["x64", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"],
+    ["arm64", "Microsoft.VisualStudio.Component.VC.Tools.ARM64"],
+  ] as const) {
+    it.effect(`detects installed Windows Spectre libraries for ${arch}`, () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-windows-preflight-" });
+          const pythonPath = path.join(tempDir, "python.exe");
+          yield* fs.writeFileString(pythonPath, "python");
+          yield* fs.writeFileString(path.join(tempDir, "libstd-test.rlib"), "rust-std");
+          const installedComponents = new Set<string>([toolsComponent]);
+          const installedDirectories = new Set([`lib\\spectre\\${arch}`]);
+          const spawner = Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) => {
+              const childProcess = command as unknown as {
+                readonly command: string;
+                readonly args: ReadonlyArray<string>;
+              };
+              if (childProcess.command === "rustc") {
+                return Effect.succeed(mockProcess(0, `${tempDir}\n`));
+              }
+              if (childProcess.command === "powershell.exe") {
+                const script = childProcess.args.at(-1) ?? "";
+                const requiredComponents = /-requires (.+?) -property/
+                  .exec(script)?.[1]
+                  ?.split(" ");
+                const spectreDirectory = /Join-Path \$msvcToolset.FullName '([^']+)'/.exec(
+                  script,
+                )?.[1];
+                const installed =
+                  requiredComponents?.every((id) => installedComponents.has(id)) &&
+                  spectreDirectory !== undefined &&
+                  installedDirectories.has(spectreDirectory);
+                return Effect.succeed(mockProcess(installed ? 0 : 1));
+              }
+              return Effect.succeed(mockProcess(0));
+            }),
+          );
+          const preflight = preflightWindowsDesktopBuild({ arch, bundlesWslRuntime: true }).pipe(
+            Effect.provide(
+              Layer.merge(
+                spawner,
+                ConfigProvider.layer(
+                  ConfigProvider.fromEnv({ env: { npm_config_python: pythonPath } }),
+                ),
+              ),
+            ),
+          );
+
+          yield* preflight;
+
+          installedDirectories.clear();
+          const error = yield* Effect.flip(preflight);
+          assert.instanceOf(error, WindowsDesktopBuildPrerequisitesMissingError);
+          assert.deepStrictEqual(error.missing, ["msvc"]);
+        }),
+      ),
+    );
+  }
+
   it.effect("does not require MSVC when reusing a prebuilt Windows resource monitor", () =>
     Effect.scoped(
       Effect.gen(function* () {
