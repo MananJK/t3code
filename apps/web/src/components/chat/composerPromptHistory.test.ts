@@ -142,32 +142,48 @@ describe("buildComposerPromptHistoryEntries", () => {
 });
 
 describe("stepComposerPromptHistory", () => {
-  it("does not start browsing from a non-empty draft", () => {
-    expect(backward(null, "typing")).toBeNull();
+  it("recalls from a non-empty draft and restores it past the newest entry", () => {
+    const recalled = backward(null, "typing");
+    expect(recalled).toEqual({
+      position: { entryId: "m3", recalled: "third", draft: "typing" },
+      prompt: "third",
+    });
+    expect(forward(recalled!.position, "third")).toEqual({ position: null, prompt: "typing" });
   });
 
   it("walks back from the newest entry", () => {
     const first = backward(null, "");
-    expect(first).toEqual({ position: { entryId: "m3", recalled: "third" }, prompt: "third" });
+    expect(first).toEqual({
+      position: { entryId: "m3", recalled: "third", draft: "" },
+      prompt: "third",
+    });
     expect(backward(first!.position, "third")?.prompt).toBe("second");
   });
 
   it("is a no-op at the oldest entry so the caret keeps moving", () => {
-    expect(backward({ entryId: "m1", recalled: "first" }, "first")).toBeNull();
+    expect(backward({ entryId: "m1", recalled: "first", draft: "" }, "first")).toBeNull();
   });
 
   it("walks forward and empties the composer past the newest entry", () => {
-    const newer = forward({ entryId: "m2", recalled: "second" }, "second");
+    const newer = forward({ entryId: "m2", recalled: "second", draft: "" }, "second");
     expect(newer?.prompt).toBe("third");
     expect(forward(newer!.position, "third")).toEqual({ position: null, prompt: "" });
   });
 
   it("treats an edited recall as a fresh draft", () => {
-    const position: ComposerPromptHistoryPosition = { entryId: "m3", recalled: "third" };
+    const position: ComposerPromptHistoryPosition = {
+      entryId: "m3",
+      recalled: "third",
+      draft: "",
+    };
     expect(backward(position, "third edited")).toBeNull();
     expect(forward(position, "third edited")).toBeNull();
     // Sent and cleared: ArrowUp starts over from the newest entry.
-    expect(backward(position, "")?.position).toEqual({ entryId: "m3", recalled: "third" });
+    expect(backward(position, "")?.position).toEqual({
+      entryId: "m3",
+      recalled: "third",
+      draft: "",
+    });
   });
 
   it("does nothing on forward when not browsing", () => {
@@ -184,7 +200,7 @@ describe("stepComposerPromptHistory", () => {
     const older = stepComposerPromptHistory({
       direction: "backward",
       entries: grown,
-      position: { entryId: "m1", recalled: "A" },
+      position: { entryId: "m1", recalled: "A", draft: "" },
       currentPrompt: "A",
     });
     expect(older?.prompt).toBe("zeroth");
@@ -192,7 +208,7 @@ describe("stepComposerPromptHistory", () => {
     const missing = stepComposerPromptHistory({
       direction: "forward",
       entries: grown,
-      position: { entryId: "gone", recalled: "not sent" },
+      position: { entryId: "gone", recalled: "not sent", draft: "" },
       currentPrompt: "not sent",
     });
     expect(missing).toBeNull();
@@ -206,7 +222,7 @@ describe("stepComposerPromptHistory", () => {
     const step = stepComposerPromptHistory({
       direction: "backward",
       entries: collapsed,
-      position: { entryId: "m2", recalled: "A" },
+      position: { entryId: "m2", recalled: "A", draft: "" },
       currentPrompt: "A",
     });
     expect(step?.prompt).toBe("first");

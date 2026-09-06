@@ -40,6 +40,7 @@ export interface ComposerPromptHistoryEntry {
 export interface ComposerPromptHistoryPosition {
   readonly entryId: string;
   readonly recalled: string;
+  readonly draft: string;
 }
 
 /**
@@ -183,8 +184,8 @@ export function buildComposerPromptHistoryEntries(
 
 /**
  * Returns null when the key should fall through to normal caret movement.
- * Backward starts only from an empty composer and stops at the oldest entry.
- * Forward past the newest entry empties the composer and ends browsing. An
+ * Backward starts from the visual beginning of a composer and stops at the oldest entry.
+ * Forward past the newest entry restores the original draft and ends browsing. An
  * edited or sent recall no longer matches `recalled`, so browsing restarts
  * from scratch on the next backward step.
  */
@@ -199,14 +200,24 @@ export function stepComposerPromptHistory(input: {
     position && position.recalled === currentPrompt ? findActive(entries, position) : -1;
 
   if (input.direction === "backward") {
-    if (activeIndex < 0 && currentPrompt.length > 0) return null;
+    if (activeIndex < 0 && position !== null && currentPrompt.length > 0) return null;
     const entry = entries[activeIndex < 0 ? entries.length - 1 : activeIndex - 1];
     if (!entry) return null;
-    return { position: { entryId: entry.id, recalled: entry.prompt }, prompt: entry.prompt };
+    return {
+      position: {
+        entryId: entry.id,
+        recalled: entry.prompt,
+        draft: activeIndex < 0 || position === null ? currentPrompt : position.draft,
+      },
+      prompt: entry.prompt,
+    };
   }
 
-  if (activeIndex < 0) return null;
+  if (activeIndex < 0 || position === null) return null;
   const entry = entries[activeIndex + 1];
-  if (!entry) return { position: null, prompt: "" };
-  return { position: { entryId: entry.id, recalled: entry.prompt }, prompt: entry.prompt };
+  if (!entry) return { position: null, prompt: position.draft };
+  return {
+    position: { entryId: entry.id, recalled: entry.prompt, draft: position.draft },
+    prompt: entry.prompt,
+  };
 }
